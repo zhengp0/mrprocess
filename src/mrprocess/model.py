@@ -3,11 +3,13 @@ Model of the process, currently includes
 - signal model
 - linear model
 """
+import os
 from typing import List, Tuple, Union
 from dataclasses import dataclass
 from pathlib import Path
 import dill
 import numpy as np
+import matplotlib.pyplot as plt
 from .utils import read_csv, read_yaml
 from mrtool import MRData, LinearCovModel, LogCovModel, MRBRT
 from mrtool.core.other_sampling import sample_simple_lme_beta
@@ -29,6 +31,14 @@ class ModelSpecs:
 
     def __repr__(self):
         return f"ModelSpecs({self.name})"
+
+
+@dataclass
+class Bounds:
+    exposure_lb: float = 0.15
+    exposure_ub: float = 0.85
+    draw_lb: float = 0.05
+    draw_ub: float = 0.95
 
 
 def load_specs(info: Union[str, Path, dict], name: str) -> ModelSpecs:
@@ -147,8 +157,84 @@ class Model:
                                               gamma_samples=gamma_samples,
                                               random_study=True).T
 
+    def get_exposure_limits(self, bounds: Bounds = None) -> Tuple[float, float]:
+        bounds = Bounds() if bounds is None else bounds
+        alt_exposure = self.signal_data.get_covs(self.alt_cov_names).mean(axis=1)
+        ref_exposure = self.signal_data.get_covs(self.ref_cov_names).mean(axis=1)
+        exp_lower = np.quantile(ref_exposure, bounds.exposure_lb)
+        exp_upper = np.quantile(alt_exposure, bounds.exposure_ub)
+
+        return (exp_lower, exp_upper)
+
+    def get_draw_limits(self, bounds: Bounds = None) -> Tuple[np.ndarray, np.ndarray]:
+        bounds = Bounds() if bounds is None else bounds
+        draws = self.get_draws()
+        return (np.quantile(draws, bounds.draw_lb, axis=0),
+                np.quantile(draws, bounds.draw_ub, axis=0))
+
+    def get_effective_exp_index(self,
+                                exposures: np.ndarray = None,
+                                bounds: Bounds = None):
+        exposures = self.get_prediction_exposures() if exposures is None else exposures
+        exp_lower, exp_upper = self.get_exposure_limits(bounds)
+        return (exposures >= exp_lower) & (exposures <= exp_upper)
+
+    def is_harmful(self, draws: np.ndarray = None, bounds: Bounds = None) -> bool:
+        index = self.get_effective_exp_index(bounds=bounds)
+        draws = self.get_draws() if draws is None else draws
+        median = np.median(draws, axis=0)
+        return np.sum(median[index] >= 0) > 0.5*np.sum(index)
+
+    def get_score(self, draws: np.ndarray = None, bounds: Bounds = None) -> float:
+        index = self.get_effective_exp_index(bounds=bounds)
+        draws = self.get_draws() if draws is None else draws
+        draw_lower = np.quantile(draws, bounds.draw_lb, axis=0)
+        draw_upper = np.quantile(draws, bounds.draw_ub, axis=0)
+        return draw_lower[index].mean() if self.is_harmful(draws=draws) else -draw_upper[index].mean()
+
+    def plot_model(self,
+                   bounds: Bounds = None,
+                   ax=None,
+                   title: str = None,
+                   title_score: bool = True,
+                   xlabel: str = 'exposure',
+                   ylabel: str = 'ln relative risk',
+                   file_path: Union[str, Path] = None):
+        bounds = Bounds() if bounds is None else bounds
+        exp = self.get_prediction_exposures()
+        exp_lower, exp_upper = self.get_exposure_limits(bounds=bounds)
+
+        ax = plt.subplot() if ax is None else ax
+        draws = self.get_draws()
+        draws_lower = np.quantile(draws, bounds.draw_lb, axis=0)
+        draws_upper = np.quantile(draws, bounds.draw_ub, axis=0)
+        draws_median = np.median(draws, axis=0)
+
+        ax.plot(exp, draws_median, color='#69b3a2', linewidth=1)
+        ax.fill_between(exp, draws_lower, draws_upper, color='#69b3a2', alpha=0.3)
+        ax.axvline(exp_lower, linestyle='--', color='k', linewidth=1)
+        ax.axvline(exp_upper, linestyle='--', color='k', linewidth=1)
+        ax.axhline(0.0, linestyle='--', color='k', linewidth=1)
+
+        title = self.specs.name if title is None else title
+        if title_score:
+            score = self.get_score(draws=draws, bounds=bounds)
+            title = f"{title}: score = {score: .3f}"
+
+        ax.set_title(title)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+
+        if file_path is not None:
+            plt.savefig(file_path, bbox_inches='tight')
+
+        return ax
+
     def save_model(self, folder: Union[str, Path]):
-        file = Path(folder) / f"{self.specs.name}.pkl"
+        folder = Path(folder)
+        if not folder.exists():
+            os.mkdir(folder)
+        file = folder / f"{self.specs.name}.pkl"
         with open(file, "wb") as f:
             dill.dump(self, f)
 

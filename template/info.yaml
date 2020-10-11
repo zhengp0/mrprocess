@@ -1,0 +1,24 @@
+default:
+  col_obs: ln_effect
+  col_obs_se: ln_se
+  col_covs: [b_0, b_1, a_0, a_1]
+  col_study_id: nid
+  signal_cov_model_type: 'log'
+  signal_cov_model_settings:
+    alt_cov: [b_0, b_1]
+    ref_cov: [a_0, a_1]
+    use_spline: True
+    use_re: False
+    spline_knots: [0.0, 0.25, 0.5, 0.75, 1.0]
+    spline_degree: 2
+    spline_knots_type: frequency
+    prior_spline_monotonicity: increasing
+  signal_model_inlier_pct: 0.9
+  signal_model_fitting_options:
+    inner_print_level: 5
+    inner_max_iter: 200
+    outer_step_size: 200.0
+    outer_max_iter: 100
+  linear_model_fitting_options:
+    inner_print_level: 5
+    inner_max_iter: 200
