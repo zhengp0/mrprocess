@@ -1,2 +1,3 @@
-# mrtool-process
-Process of fitting GBD related risks
+# MRTool Process
+
+Process of fitting GBD related risks.
