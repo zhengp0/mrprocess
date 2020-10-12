@@ -85,7 +85,9 @@ class Model:
 
         # place holders
         self.linear_data = None
-        self.linear_cov_model = LinearCovModel('signal', use_re=True)
+        self.linear_cov_model = LinearCovModel('signal', use_re=True,
+                                               prior_beta_uniform=np.array([1.0, 1.0]),
+                                               prior_gamma_gaussian=np.array([0.0, 0.1]))
         self.linear_model = None
 
     def fit_signal_model(self):
@@ -120,6 +122,10 @@ class Model:
         )
         self.linear_model = MRBRT(self.linear_data, cov_models=[self.linear_cov_model])
         self.linear_model.fit_model(**self.specs.linear_model_fitting_options)
+        self.linear_model.gamma_soln[0] = min(
+            self.linear_model.gamma_soln[0],
+            np.mean(self.linear_model.u_soln[0, :]**2)
+        )
 
     def get_beta_samples(self, num_samples: int) -> np.ndarray:
         return sample_simple_lme_beta(num_samples, self.linear_model)
@@ -186,11 +192,31 @@ class Model:
         return np.sum(median[index] >= 0) > 0.5*np.sum(index)
 
     def get_score(self, draws: np.ndarray = None, bounds: Bounds = None) -> float:
+        bounds = Bounds() if bounds is None else bounds
         index = self.get_effective_exp_index(bounds=bounds)
         draws = self.get_draws() if draws is None else draws
         draw_lower = np.quantile(draws, bounds.draw_lb, axis=0)
         draw_upper = np.quantile(draws, bounds.draw_ub, axis=0)
         return draw_lower[index].mean() if self.is_harmful(draws=draws) else -draw_upper[index].mean()
+
+    def plot_data(self, ax=None):
+        ax = plt.subplot() if ax is None else ax
+        data = self.signal_data
+        alt_exposure = data.get_covs(self.alt_cov_names)
+        ref_exposure = data.get_covs(self.ref_cov_names)
+
+        alt_mean = alt_exposure.mean(axis=1)
+        ref_mean = ref_exposure.mean(axis=1)
+        mean = 0.5*(alt_mean + ref_mean)
+        ref_exposures = np.repeat(self.exposure_lb, data.num_obs)
+        signal = self.get_signal(
+            alt_cov=[ref_mean for _ in self.alt_cov_names],
+            ref_cov=[ref_exposures for _ in self.ref_cov_names]
+        )
+        prediction = self.linear_model.predict(MRData(covs={'signal': signal}))
+
+        ax.scatter(alt_mean, prediction + data.obs,
+                   c='gray', s=5.0/data.obs_se, alpha=0.5)
 
     def plot_model(self,
                    bounds: Bounds = None,
@@ -199,7 +225,7 @@ class Model:
                    title_score: bool = True,
                    xlabel: str = 'exposure',
                    ylabel: str = 'ln relative risk',
-                   file_path: Union[str, Path] = None):
+                   folder: Union[str, Path] = None):
         bounds = Bounds() if bounds is None else bounds
         exp = self.get_prediction_exposures()
         exp_lower, exp_upper = self.get_exposure_limits(bounds=bounds)
@@ -225,8 +251,13 @@ class Model:
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
 
-        if file_path is not None:
-            plt.savefig(file_path, bbox_inches='tight')
+        self.plot_data(ax=ax)
+
+        if folder is not None:
+            folder = Path(folder)
+            if not folder.exists():
+                os.mkdir(folder)
+            plt.savefig(folder / f"{self.specs.name.pdf}", bbox_inches='tight')
 
         return ax
 
