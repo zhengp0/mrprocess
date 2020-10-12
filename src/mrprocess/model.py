@@ -27,6 +27,7 @@ class ModelSpecs:
     signal_cov_model_settings: dict
     signal_model_inlier_pct: float
     signal_model_fitting_options: dict
+    linear_cov_model_settings: dict
     linear_model_fitting_options: dict
 
     def __repr__(self):
@@ -86,13 +87,12 @@ class Model:
         # place holders
         self.linear_data = None
         self.linear_cov_model = LinearCovModel('signal', use_re=True,
-                                               prior_beta_uniform=np.array([1.0, 1.0]),
-                                               prior_gamma_gaussian=np.array([0.0, 0.1]))
+                                               **self.specs.linear_cov_model_settings)
         self.linear_model = None
 
     def fit_signal_model(self):
         self.signal_model.fit_model(**self.specs.signal_model_fitting_options)
-        self.df['outlier'] = (self.signal_model.w_soln <= 0.1).astype(int)[self.signal_data.data_id]
+        self.df['outlier'] = (self.signal_model.w_soln <= 0.1).astype(int)[np.argsort(self.signal_data.data_id)]
 
     def get_signal(self,
                    alt_cov: List[np.ndarray],
@@ -110,22 +110,18 @@ class Model:
             alt_cov=[self.signal_data.covs[cov_name] for cov_name in self.alt_cov_names],
             ref_cov=[self.signal_data.covs[cov_name] for cov_name in self.ref_cov_names]
         )
-        self.df['signal'] = signal[self.signal_data.data_id]
+        self.df['signal'] = signal[np.argsort(self.signal_data.data_id)]
         self.linear_data = MRData()
         self.linear_data.load_df(
             self.df[self.df.outlier == 0],
             col_obs=self.specs.col_obs,
             col_obs_se=self.specs.col_obs_se,
-            col_covs=['signal'],
+            col_covs=['signal'] + self.alt_cov_names + self.ref_cov_names,
             col_study_id=self.specs.col_study_id,
             col_data_id='data_id'
         )
         self.linear_model = MRBRT(self.linear_data, cov_models=[self.linear_cov_model])
         self.linear_model.fit_model(**self.specs.linear_model_fitting_options)
-        self.linear_model.gamma_soln[0] = min(
-            self.linear_model.gamma_soln[0],
-            np.mean(self.linear_model.u_soln[0, :]**2)
-        )
 
     def get_beta_samples(self, num_samples: int) -> np.ndarray:
         return sample_simple_lme_beta(num_samples, self.linear_model)
@@ -207,7 +203,6 @@ class Model:
 
         alt_mean = alt_exposure.mean(axis=1)
         ref_mean = ref_exposure.mean(axis=1)
-        mean = 0.5*(alt_mean + ref_mean)
         ref_exposures = np.repeat(self.exposure_lb, data.num_obs)
         signal = self.get_signal(
             alt_cov=[ref_mean for _ in self.alt_cov_names],
@@ -215,8 +210,11 @@ class Model:
         )
         prediction = self.linear_model.predict(MRData(covs={'signal': signal}))
 
+        trim_index = self.signal_model.w_soln <= 0.1
         ax.scatter(alt_mean, prediction + data.obs,
                    c='gray', s=5.0/data.obs_se, alpha=0.5)
+        ax.scatter(alt_mean[trim_index], prediction[trim_index] + data.obs[trim_index],
+                   c='red', marker='x', s=5.0/data.obs_se[trim_index])
 
     def plot_model(self,
                    bounds: Bounds = None,
@@ -225,6 +223,10 @@ class Model:
                    title_score: bool = True,
                    xlabel: str = 'exposure',
                    ylabel: str = 'ln relative risk',
+                   xlim: tuple = None,
+                   ylim: tuple = None,
+                   xscale: str = None,
+                   yscale: str = None,
                    folder: Union[str, Path] = None):
         bounds = Bounds() if bounds is None else bounds
         exp = self.get_prediction_exposures()
@@ -247,9 +249,17 @@ class Model:
             score = self.get_score(draws=draws, bounds=bounds)
             title = f"{title}: score = {score: .3f}"
 
-        ax.set_title(title)
+        ax.set_title(title, loc='left')
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
+        if xlim is not None:
+            ax.set_xlim(*xlim)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
+        if xscale is not None:
+            ax.set_xscale(xscale)
+        if yscale is not None:
+            ax.set_yscale(yscale)
 
         self.plot_data(ax=ax)
 
