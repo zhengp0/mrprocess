@@ -267,7 +267,7 @@ class Model:
             folder = Path(folder)
             if not folder.exists():
                 os.mkdir(folder)
-            plt.savefig(folder / f"{self.specs.name.pdf}", bbox_inches='tight')
+            plt.savefig(folder / f"{self.specs.name}.pdf", bbox_inches='tight')
 
         return ax
 
