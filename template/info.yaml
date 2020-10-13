@@ -10,7 +10,8 @@ default:
     use_spline: True
     use_re: False
     spline_knots: [0.0, 0.25, 0.5, 0.75, 1.0]
-    spline_degree: 2
+    spline_degree: 3
+    spline_r_linear: True
     spline_knots_type: frequency
     prior_spline_monotonicity: increasing
   signal_model_inlier_pct: 0.9
@@ -19,6 +20,8 @@ default:
     inner_max_iter: 200
     outer_step_size: 200.0
     outer_max_iter: 100
+  linear_cov_model_settings:
+    prior_beta_uniform: [1.0, 1.0]
   linear_model_fitting_options:
     inner_print_level: 5
     inner_max_iter: 200

@@ -149,11 +149,20 @@ class Model:
         data = self.get_prediction_data(num_points=num_points)
         return self.linear_model.predict(data)
 
+    def get_gamma_sd(self) -> float:
+        lt = self.linear_model.lt
+        gamma_fisher = lt.get_gamma_fisher(lt.gamma)
+        gamma_sd = 1.0/np.sqrt(gamma_fisher[0, 0])
+        return gamma_sd
+
     def get_draws(self,
                   num_samples: int = 1000,
-                  num_points: int = 100) -> np.ndarray:
+                  num_points: int = 100,
+                  use_gamma_ub: bool = False) -> np.ndarray:
         data = self.get_prediction_data(num_points=num_points)
         beta_samples, gamma_samples = self.get_samples(num_samples=num_samples)
+        if use_gamma_ub:
+            gamma_samples += self.get_gamma_sd()
         return self.linear_model.create_draws(data,
                                               beta_samples=beta_samples,
                                               gamma_samples=gamma_samples,
@@ -187,10 +196,13 @@ class Model:
         median = np.median(draws, axis=0)
         return np.sum(median[index] >= 0) > 0.5*np.sum(index)
 
-    def get_score(self, draws: np.ndarray = None, bounds: Bounds = None) -> float:
+    def get_score(self,
+                  draws: np.ndarray = None,
+                  bounds: Bounds = None,
+                  use_gamma_ub: bool = False) -> float:
         bounds = Bounds() if bounds is None else bounds
         index = self.get_effective_exp_index(bounds=bounds)
-        draws = self.get_draws() if draws is None else draws
+        draws = self.get_draws(use_gamma_ub=use_gamma_ub) if draws is None else draws
         draw_lower = np.quantile(draws, bounds.draw_lb, axis=0)
         draw_upper = np.quantile(draws, bounds.draw_ub, axis=0)
         return draw_lower[index].mean() if self.is_harmful(draws=draws) else -draw_upper[index].mean()
@@ -220,7 +232,6 @@ class Model:
                    bounds: Bounds = None,
                    ax=None,
                    title: str = None,
-                   title_score: bool = True,
                    xlabel: str = 'exposure',
                    ylabel: str = 'ln relative risk',
                    xlim: tuple = None,
@@ -234,20 +245,25 @@ class Model:
 
         ax = plt.subplot() if ax is None else ax
         draws = self.get_draws()
+        wider_draws = self.get_draws(use_gamma_ub=True)
         draws_lower = np.quantile(draws, bounds.draw_lb, axis=0)
         draws_upper = np.quantile(draws, bounds.draw_ub, axis=0)
+        wider_draws_lower = np.quantile(wider_draws, bounds.draw_lb, axis=0)
+        wider_draws_upper = np.quantile(wider_draws, bounds.draw_ub, axis=0)
+
         draws_median = np.median(draws, axis=0)
 
         ax.plot(exp, draws_median, color='#69b3a2', linewidth=1)
-        ax.fill_between(exp, draws_lower, draws_upper, color='#69b3a2', alpha=0.3)
+        ax.fill_between(exp, draws_lower, draws_upper, color='#69b3a2', alpha=0.2)
+        ax.fill_between(exp, wider_draws_lower, wider_draws_upper, color='#69b3a2', alpha=0.2)
         ax.axvline(exp_lower, linestyle='--', color='k', linewidth=1)
         ax.axvline(exp_upper, linestyle='--', color='k', linewidth=1)
         ax.axhline(0.0, linestyle='--', color='k', linewidth=1)
 
         title = self.specs.name if title is None else title
-        if title_score:
-            score = self.get_score(draws=draws, bounds=bounds)
-            title = f"{title}: score = {score: .3f}"
+        score = self.get_score(draws=draws, bounds=bounds)
+        low_score = self.get_score(draws=wider_draws, bounds=bounds, use_gamma_ub=True)
+        title = f"{title}: score = ({low_score: .3f}, {score: .3f})"
 
         ax.set_title(title, loc='left')
         ax.set_xlabel(xlabel)

@@ -51,9 +51,21 @@ class Pipeline:
                      folder: Union[str, Path] = None) -> pd.DataFrame:
         scores = [self.models[ro_pair].get_score(bounds=bounds)
                   for ro_pair in self.ro_pairs]
+        low_scores = [self.models[ro_pair].get_score(bounds=bounds, use_gamma_ub=True)
+                      for ro_pair in self.ro_pairs]
+        num_studies = [self.models[ro_pair].signal_data.num_studies
+                       for ro_pair in self.ro_pairs]
+        gammas = [self.models[ro_pair].linear_model.gamma_soln[0]
+                  for ro_pair in self.ro_pairs]
+        gamma_sds = [self.models[ro_pair].get_gamma_sd()
+                     for ro_pair in self.ro_pairs]
         df = pd.DataFrame({
             'ro_pair': self.ro_pairs,
-            'score': scores
+            'score': scores,
+            'low_score': low_scores,
+            'gamma': gammas,
+            'gamma_sd': gamma_sds,
+            'num_studies': num_studies,
         })
 
         if folder is not None:
