@@ -29,6 +29,7 @@ class ModelSpecs:
     signal_model_fitting_options: dict
     linear_cov_model_settings: dict
     linear_model_fitting_options: dict
+    j_shaped: bool
 
     def __repr__(self):
         return f"ModelSpecs({self.name})"
@@ -155,18 +156,28 @@ class Model:
         gamma_sd = 1.0/np.sqrt(gamma_fisher[0, 0])
         return gamma_sd
 
+    def get_min_ln_rr(self) -> float:
+        return np.min(self.get_prediction())
+
+    def get_min_ln_rr_index(self) -> float:
+        return np.argmin(self.get_prediction())
+
     def get_draws(self,
-                  num_samples: int = 1000,
+                  num_samples: int = 5000,
                   num_points: int = 100,
                   use_gamma_ub: bool = False) -> np.ndarray:
         data = self.get_prediction_data(num_points=num_points)
         beta_samples, gamma_samples = self.get_samples(num_samples=num_samples)
         if use_gamma_ub:
-            gamma_samples += self.get_gamma_sd()
-        return self.linear_model.create_draws(data,
-                                              beta_samples=beta_samples,
-                                              gamma_samples=gamma_samples,
-                                              random_study=True).T
+            gamma_samples += 2.0*self.get_gamma_sd()
+        draws = self.linear_model.create_draws(data,
+                                               beta_samples=beta_samples,
+                                               gamma_samples=gamma_samples,
+                                               random_study=True).T
+        if self.specs.j_shaped:
+            draws -= draws[:, self.get_min_ln_rr_index(), None]
+
+        return draws
 
     def get_exposure_limits(self, bounds: Bounds = None) -> Tuple[float, float]:
         bounds = Bounds() if bounds is None else bounds
@@ -221,6 +232,8 @@ class Model:
             ref_cov=[ref_exposures for _ in self.ref_cov_names]
         )
         prediction = self.linear_model.predict(MRData(covs={'signal': signal}))
+        if self.specs.j_shaped:
+            prediction -= self.get_min_ln_rr()
 
         trim_index = self.signal_model.w_soln <= 0.1
         ax.scatter(alt_mean, prediction + data.obs,

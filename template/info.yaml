@@ -25,3 +25,4 @@ default:
   linear_model_fitting_options:
     inner_print_level: 5
     inner_max_iter: 200
+  j_shaped: False
