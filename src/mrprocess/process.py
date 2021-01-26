@@ -87,3 +87,38 @@ class Pipeline:
         self.plot_models(folder=plot_folder)
         df = self.create_score(folder=score_folder)
         return df
+    
+
+class DiagnosticPipeline:
+    def __init__(self, ro_pairs: List[str], info: Union[str, Path, dict]):
+        self.ro_pairs = ro_pairs
+        self.info = read_yaml(info)
+        self.model_specs = {
+            ro_pair: load_specs(self.info, ro_pair)
+            for ro_pair in self.ro_pairs
+        }
+        self.models = {
+            ro_pair: Model(self.model_specs[ro_pair])
+            for ro_pair in self.ro_pairs
+        }
+
+    @property
+    def size(self):
+        return len(self.ro_pairs)
+
+    def fit_models(self):
+        for ro_pair in self.ro_pairs:
+            self.models[ro_pair].fit_models()
+
+    def plot_models(self):
+        _, ax = plt.subplots(self.size, 1, figsize=(8, 5*self.size))
+        for i, ro_pair in enumerate(self.ro_pairs):
+            self.models[ro_pair].plot_model(ax=ax[i])
+    
+    def plot_residuals(self):
+        _, ax = plt.subplots(self.size, 1, figsize=(8, 5*self.size))
+        for i, ro_pair in enumerate(self.ro_pairs):
+            self.models[ro_pair].plot_residual(ax=ax[i])
+
+    def summarize_models(self) -> pd.DataFrame:
+        return pd.concat([self.models[ro_pair] for ro_pair in self.ro_pairs])
