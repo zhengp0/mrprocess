@@ -5,6 +5,7 @@ from typing import Union
 from pathlib import Path
 import yaml
 import pandas as pd
+from scipy.stats import norm
 
 
 def read_csv(file: Union[str, Path, pd.DataFrame]) -> pd.DataFrame:
@@ -22,3 +23,8 @@ def read_yaml(file: Union[str, Path, dict]) -> dict:
     else:
         assert isinstance(file, dict), "Wrong input type for read_yaml."
     return file
+
+
+def get_p_val(mean: float, sd: float) -> float:
+    p = norm.cdf(0.0, loc=mean, scale=sd)
+    return min(p, 1 - p)
