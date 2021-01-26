@@ -27,4 +27,4 @@ def read_yaml(file: Union[str, Path, dict]) -> dict:
 
 def get_p_val(mean: float, sd: float) -> float:
     p = norm.cdf(0.0, loc=mean, scale=sd)
-    return min(p, 1 - p)
+    return 2.0*min(p, 1 - p)

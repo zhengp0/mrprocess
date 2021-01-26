@@ -6,8 +6,9 @@ from typing import List, Union
 from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
-from .model import Bounds, Model, load_specs
-from .utils import read_yaml
+from mrprocess.model import Bounds, Model, load_specs
+from mrprocess.utils import read_yaml
+from mrprocess.diagnostic import DataDiagnostic
 
 
 class Pipeline:
@@ -98,7 +99,7 @@ class DiagnosticPipeline:
             for ro_pair in self.ro_pairs
         }
         self.models = {
-            ro_pair: Model(self.model_specs[ro_pair])
+            ro_pair: DataDiagnostic(self.model_specs[ro_pair])
             for ro_pair in self.ro_pairs
         }
 
@@ -108,7 +109,7 @@ class DiagnosticPipeline:
 
     def fit_models(self):
         for ro_pair in self.ro_pairs:
-            self.models[ro_pair].fit_models()
+            self.models[ro_pair].fit_model()
 
     def plot_models(self):
         _, ax = plt.subplots(self.size, 1, figsize=(8, 5*self.size))
@@ -121,4 +122,5 @@ class DiagnosticPipeline:
             self.models[ro_pair].plot_residual(ax=ax[i])
 
     def summarize_models(self) -> pd.DataFrame:
-        return pd.concat([self.models[ro_pair] for ro_pair in self.ro_pairs])
+        return pd.concat([self.models[ro_pair].summarize_model()
+                          for ro_pair in self.ro_pairs])
